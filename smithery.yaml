@@ -1,0 +1,46 @@
+# Smithery.ai configuration
+startCommand:
+  type: stdio
+  configSchema:
+    type: object
+    required: ["robinhood_api_key", "robinhood_private_key"]
+    properties:
+      robinhood_api_key:
+        type: string
+        title: "Robinhood API Key"
+        description: "Your Robinhood API key for authentication"
+      robinhood_private_key:
+        type: string
+        title: "Robinhood Private Key"
+        description: "Your base64-encoded private key for authentication"
+        format: "password"
+      mode:
+        type: string
+        enum: ["http", "stdio"]
+        default: "stdio"
+        description: "Server mode (http or stdio)"
+  commandFunction: |
+    (config) => ({
+      command: "node",
+      args: ["server.js"],
+      env: {
+        ROBINHOOD_API_KEY: config.robinhood_api_key,
+        ROBINHOOD_PRIVATE_KEY: config.robinhood_private_key,
+        MODE: config.mode || "stdio",
+        NODE_ENV: "production",
+        PYTHONUNBUFFERED: "1",
+        PYTHONPATH: "/app"
+      }
+    })
+
+build:
+  dockerfile: Dockerfile
+  dockerBuildPath: .
+  # Increase memory limit for Python builds if needed
+  resources:
+    memory: 2048
+
+# Additional metadata
+name: "Robinhood MCP Server"
+description: "A Model Context Protocol server for Robinhood Crypto API with Python bridge"
+version: "1.0.0"

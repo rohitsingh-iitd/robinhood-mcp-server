@@ -1,20 +1,32 @@
 // server.js - Main entry point for the Robinhood MCP Server
+import { RestServerTransport } from '@chatmcp/sdk/server/rest.js';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 
-const { Server, StdioServerTransport, RestServerTransport } = require('@chatmcp/sdk');
-const { getParamValue, getAuthValue } = require('@chatmcp/sdk/utils/index.js');
+// Store server state
+const serverState = {
+  tools: [],
+  requestHandler: null,
+  transport: null
+};
 
-// Import Robinhood modules
-const { AuthClient } = require('./src/auth/auth_wrapper');
-const { AccountClient } = require('./src/account/account_wrapper');
-const { MarketDataClient } = require('./src/market_data/market_data_wrapper');
-const { TradingClient } = require('./src/trading/trading_wrapper');
+// Get the current file's directory
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
-// Get parameters from environment or command line
-const robinhoodApiKey = getParamValue("robinhood_api_key") || "";
-const robinhoodPrivateKey = getParamValue("robinhood_private_key") || "";
-const mode = getParamValue("mode") || "stdio";
-const port = getParamValue("port") || 9593;
-const endpoint = getParamValue("endpoint") || "/rest";
+// Import Robinhood modules using dynamic imports with full file paths
+const { AuthClient } = await import(`file://${__dirname}/src/auth/auth_wrapper.js`);
+const { AccountClient } = await import(`file://${__dirname}/src/account/account_wrapper.js`);
+const { MarketDataClient } = await import(`file://${__dirname}/src/market_data/market_data_wrapper.js`);
+const { TradingClient } = await import(`file://${__dirname}/src/trading/trading_wrapper.js`);
+
+// Configuration
+const port = process.env.PORT || 9593;
+const endpoint = process.env.ENDPOINT || "/rest";
+
+// Get credentials from environment
+const robinhoodApiKey = process.env.ROBINHOOD_API_KEY || "";
+const robinhoodPrivateKey = process.env.ROBINHOOD_PRIVATE_KEY || "";
 
 // Initialize clients
 const authClient = new AuthClient(robinhoodApiKey, robinhoodPrivateKey);
@@ -23,7 +35,147 @@ const marketDataClient = new MarketDataClient(authClient);
 const tradingClient = new TradingClient(authClient);
 
 // Create MCP server
-const server = new Server();
+const server = {
+  connect: async (transport) => {
+    // Store the transport for later use
+    serverState.transport = transport;
+    
+    // Set up message handler
+    transport.onmessage = async (message) => {
+      try {
+        console.log('Received message:', JSON.stringify(message, null, 2));
+        
+        // Handle the message based on its method
+        let result;
+        switch (message.method) {
+          case 'initialize':
+            result = await handleInitialize(message);
+            break;
+          case 'tools/list':
+            result = await handleListTools(message);
+            break;
+          case 'tools/execute':
+            result = await handleExecuteTool(message);
+            break;
+          default:
+            result = {
+              jsonrpc: '2.0',
+              id: message.id,
+              error: {
+                code: -32601,
+                message: 'Method not found'
+              }
+            };
+        }
+        
+        // Send the response if we have a result
+        if (result) {
+          await transport.send(result);
+        }
+      } catch (error) {
+        console.error('Error handling message:', error);
+        if (message && message.id) {
+          await transport.send({
+            jsonrpc: '2.0',
+            id: message.id,
+            error: {
+              code: -32603,
+              message: 'Internal error',
+              data: error.message
+            }
+          });
+        }
+      }
+    };
+    
+    console.log('Server connected to transport');
+  },
+  
+  defineTools: (tools) => {
+    serverState.tools = tools;
+    console.log(`Registered ${tools.length} tools`);
+  },
+  
+  setRequestHandler: (handler) => {
+    serverState.requestHandler = handler;
+    console.log('Request handler set');
+  }
+};
+
+// Handle initialize message
+async function handleInitialize(message) {
+  return {
+    jsonrpc: '2.0',
+    id: message.id,
+    result: {
+      capabilities: {
+        tools: {
+          list: {},
+          execute: {}
+        }
+      }
+    }
+  };
+}
+
+// Handle list tools message
+async function handleListTools(message) {
+  return {
+    jsonrpc: '2.0',
+    id: message.id,
+    result: {
+      tools: serverState.tools
+    }
+  };
+}
+
+// Handle execute tool message
+async function handleExecuteTool(message) {
+  const { name, parameters } = message.params;
+  const tool = serverState.tools.find(t => t.name === name);
+  
+  if (!tool) {
+    return {
+      jsonrpc: '2.0',
+      id: message.id,
+      error: {
+        code: -32601,
+        message: 'Tool not found'
+      }
+    };
+  }
+  
+  try {
+    // Execute the tool using the request handler if available
+    let result;
+    if (serverState.requestHandler) {
+      result = await serverState.requestHandler({
+        method: name,
+        params: parameters
+      });
+    } else {
+      // Fallback to a simple execution
+      result = { status: 'success', tool: name };
+    }
+    
+    return {
+      jsonrpc: '2.0',
+      id: message.id,
+      result
+    };
+  } catch (error) {
+    console.error(`Error executing tool ${name}:`, error);
+    return {
+      jsonrpc: '2.0',
+      id: message.id,
+      error: {
+        code: -32000,
+        message: 'Tool execution failed',
+        data: error.message
+      }
+    };
+  }
+}
 
 // Define MCP tools
 server.defineTools([
@@ -292,29 +444,46 @@ server.setRequestHandler(async (request) => {
   }
 });
 
-// Run the server
-async function runServer() {
+// Start the server
+async function startServer() {
   try {
-    // Support both stdio and REST transport
-    if (mode === "rest") {
-      const transport = new RestServerTransport({
-        port,
-        endpoint,
-      });
-      await server.connect(transport);
-      await transport.startServer();
-      console.log(`Robinhood MCP Server running on REST with port ${port} and endpoint ${endpoint}`);
-    } else {
-      // Default to stdio transport
-      const transport = new StdioServerTransport();
-      await server.connect(transport);
-      console.log("Robinhood MCP Server running on stdio with Robinhood Crypto trading tools");
-    }
+    console.log('Starting server...');
+    
+    // Create a new transport instance
+    const transport = new RestServerTransport({
+      port,
+      endpoint
+    });
+    
+    console.log('Connecting server to transport...');
+    await server.connect(transport);
+    
+    console.log('Starting transport server...');
+    await transport.startServer();
+    
+    console.log(`Server running on http://localhost:${port}${endpoint}`);
+    
+    // Handle process termination
+    process.on('SIGINT', async () => {
+      console.log('Shutting down server...');
+      try {
+        await transport.stopServer();
+        console.log('Server stopped');
+        process.exit(0);
+      } catch (error) {
+        console.error('Error shutting down server:', error);
+        process.exit(1);
+      }
+    });
+    
   } catch (error) {
-    console.error(`Fatal error running server: ${error.message}`);
+    console.error('Failed to start server:', error);
     process.exit(1);
   }
 }
 
 // Start the server
-runServer();
+startServer().catch(error => {
+  console.error('Unhandled error in server startup:', error);
+  process.exit(1);
+});

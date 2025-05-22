@@ -1,7 +1,12 @@
 // account_wrapper.js - Wrapper for the Python AccountClient for Node.js compatibility
 
-const { spawn } = require('child_process');
-const path = require('path');
+import { spawn } from 'child_process';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+// Get the current file's directory
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 class AccountClient {
   constructor(authClient) {
@@ -12,7 +17,7 @@ class AccountClient {
     // Execute the Python account client via a subprocess
     return new Promise((resolve, reject) => {
       const pythonProcess = spawn('python3', [
-        path.join(__dirname, '../../python_bridge.py'),
+        join(__dirname, '../../python_bridge.py'),
         'account',
         'get_account'
       ]);
@@ -78,4 +83,4 @@ class AccountClient {
   }
 }
 
-module.exports = { AccountClient };
+export { AccountClient };

@@ -1,0 +1,37 @@
+# Node.js
+npm-debug.log
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+
+# IDE
+.vscode/
+.idea/
+
+# Git
+.git
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build
+dist/
+build/
+
+# Local development
+*.local
+
+# Logs
+logs
+*.log
+
+# Keep .npmrc and package files
+!.npmrc
+!package*.json

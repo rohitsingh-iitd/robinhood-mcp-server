@@ -1,7 +1,12 @@
 // market_data_wrapper.js - Wrapper for the Python MarketDataClient for Node.js compatibility
 
-const { spawn } = require('child_process');
-const path = require('path');
+import { spawn } from 'child_process';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+// Get the current file's directory
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 class MarketDataClient {
   constructor(authClient) {
@@ -12,10 +17,10 @@ class MarketDataClient {
     // Execute the Python market data client via a subprocess
     return new Promise((resolve, reject) => {
       const pythonProcess = spawn('python3', [
-        path.join(__dirname, '../../python_bridge.py'),
+        join(__dirname, '../../python_bridge.py'),
         'market_data',
         'get_best_bid_ask',
-        JSON.stringify(symbols || [])
+        ...(symbols ? [JSON.stringify(symbols)] : [])
       ]);
       
       let result = '';
@@ -81,4 +86,4 @@ class MarketDataClient {
   }
 }
 
-module.exports = { MarketDataClient };
+export { MarketDataClient };
