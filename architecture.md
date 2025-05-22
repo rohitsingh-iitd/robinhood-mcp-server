@@ -1,7 +1,7 @@
 # Robinhood MCP Server Architecture
 
 ## Overview
-The Robinhood MCP (Market Connectivity Protocol) Server is designed to provide a comprehensive interface to the Robinhood Crypto API. This server will handle authentication, account management, market data retrieval, and trading operations.
+The Robinhood MCP Server is designed to provide a comprehensive interface to the Robinhood Crypto API. This server will handle authentication, account management, market data retrieval, and trading operations.
 
 ## Core Components
 

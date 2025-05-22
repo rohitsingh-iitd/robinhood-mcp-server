@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Robinhood MCP (Market Connectivity Protocol) Server provides a comprehensive interface to the Robinhood Crypto API. This server handles authentication, account management, market data retrieval, and trading operations through both REST API and WebSocket interfaces.
+The Robinhood MCP Server provides a comprehensive interface to the Robinhood Crypto API. This server handles authentication, account management, market data retrieval, and trading operations through both REST API and WebSocket interfaces.
 
 ## Installation
 
