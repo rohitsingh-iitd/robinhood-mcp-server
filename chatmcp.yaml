@@ -1,0 +1,37 @@
+params:
+  type: object
+  properties:
+    robinhood_api_key:
+      type: string
+      description: Robinhood API Key
+    robinhood_private_key:
+      type: string
+      description: Robinhood Private Key (base64 encoded)
+  required:
+    - robinhood_api_key
+    - robinhood_private_key
+
+rest:
+  name: robinhood
+  port: 9593
+  endpoint: /rest
+
+npx:
+  command: 
+    | npx -y server-robinhood-mcp
+  config:
+    | {
+    |   "mcpServers": {
+    |     "robinhood": {
+    |       "command": "node",
+    |       "args": [
+    |         "server.js",
+    |         "--mode=rest"
+    |       ],
+    |       "env": {
+    |         "ROBINHOOD_API_KEY": "<YOUR_API_KEY_HERE>",
+    |         "ROBINHOOD_PRIVATE_KEY": "<YOUR_PRIVATE_KEY_HERE>"
+    |       }
+    |     }
+    |   }
+    | }

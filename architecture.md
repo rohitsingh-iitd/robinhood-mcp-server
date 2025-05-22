@@ -139,9 +139,3 @@ For real-time data, the server will provide WebSocket endpoints:
 4. Rate limiting will be enforced to prevent abuse
 5. Proper error handling to avoid leaking sensitive information
 
-## Scalability Considerations
-
-1. Caching layer for frequently accessed data
-2. Asynchronous processing for non-blocking operations
-3. Connection pooling for efficient API usage
-4. Horizontal scaling capability through stateless design

@@ -1,0 +1,22 @@
+{
+  "name": "robinhood-mcp-server",
+  "version": "1.0.0",
+  "description": "Robinhood MCP Server",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "robinhood",
+    "crypto",
+    "trading",
+    "mcp",
+    "chatmcp"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@chatmcp/sdk": "^1.0.0"
+  }
+}
