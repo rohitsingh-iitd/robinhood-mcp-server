@@ -103,9 +103,12 @@ const server = {
   }
 };
 
-// Handle initialize message
+// Handle initialize message - respond immediately with basic capabilities
 async function handleInitialize(message) {
-  return {
+  console.log('Handling initialize request');
+  
+  // Respond immediately with basic capabilities
+  const response = {
     jsonrpc: '2.0',
     id: message.id,
     result: {
@@ -116,39 +119,52 @@ async function handleInitialize(message) {
       capabilities: {
         tools: {
           list: {
-            dynamicRegistration: false,
-            dynamicRegistrationProperties: {
-              schema: {
-                type: "object",
-                properties: {
-                  name: { type: "string" },
-                  description: { type: "string" },
-                  parameters: { type: "object" }
-                },
-                required: ["name", "description"]
-              }
-            }
+            dynamicRegistration: false
           },
           execute: {}
         }
       }
     }
   };
+  
+  console.log('Sending initialize response:', JSON.stringify(response, null, 2));
+  return response;
 }
 
 // Handle list tools message
 async function handleListTools(message) {
-  return {
-    jsonrpc: '2.0',
-    id: message.id,
-    result: {
-      tools: serverState.tools.map(tool => ({
-        name: tool.name,
-        description: tool.description,
-        parameters: tool.parameters || { type: "object", properties: {} }
-      }))
-    }
-  };
+  console.log('Handling list tools request');
+  
+  try {
+    // Return the tools list immediately
+    const toolsList = serverState.tools.map(tool => ({
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.parameters || { type: "object", properties: {} }
+    }));
+    
+    const response = {
+      jsonrpc: '2.0',
+      id: message.id,
+      result: {
+        tools: toolsList
+      }
+    };
+    
+    console.log('Sending tools list:', JSON.stringify(response, null, 2));
+    return response;
+  } catch (error) {
+    console.error('Error listing tools:', error);
+    return {
+      jsonrpc: '2.0',
+      id: message.id,
+      error: {
+        code: -32000,
+        message: 'Failed to list tools',
+        data: error.message
+      }
+    };
+  }
 }
 
 // Handle execute tool message
@@ -472,7 +488,22 @@ app.use(express.json());
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'ok' });
+  try {
+    // Respond immediately with server status
+    res.status(200).json({
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      memory: process.memoryUsage(),
+      env: process.env.NODE_ENV
+    });
+  } catch (error) {
+    console.error('Health check error:', error);
+    res.status(500).json({ 
+      status: 'error',
+      error: error.message 
+    });
+  }
 });
 
 // Start the server
@@ -487,14 +518,28 @@ async function startServer() {
       server: app
     });
     
+    // Set a 30-second timeout for requests
+    app.use((req, res, next) => {
+      req.setTimeout(30000, () => {
+        console.error('Request timed out:', req.method, req.url);
+        if (!res.headersSent) {
+          res.status(504).json({ error: 'Request timeout' });
+        }
+      });
+      next();
+    });
+    
     console.log('Connecting server to transport...');
     await server.connect(transport);
     
     // Start the HTTP server
-    const httpServer = app.listen(port, () => {
-      console.log(`Server running on http://localhost:${port}${endpoint}`);
-      console.log(`Health check available at http://localhost:${port}/health`);
+    const httpServer = app.listen(port, '0.0.0.0', () => {
+      console.log(`Server running on http://0.0.0.0:${port}${endpoint}`);
+      console.log(`Health check available at http://0.0.0.0:${port}/health`);
     });
+    
+    // Set server timeout to 25 seconds (less than the 30s request timeout)
+    httpServer.setTimeout(25000);
     
     // Handle process termination
     const shutdown = async () => {
