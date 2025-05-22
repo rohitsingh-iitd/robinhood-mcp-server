@@ -1,62 +1,45 @@
-# Use Node.js as base image
-FROM node:18 AS builder
+# Use Node.js as base image with Python
+FROM node:18-bullseye-slim
 
 WORKDIR /app
 
-# Install Python and build dependencies
+# Install Python and required tools
 RUN apt-get update && apt-get install -y \
     python3 \
-    python3-venv \
     python3-pip \
-    make \
-    g++
+    python3-venv \
+    && rm -rf /var/lib/apt/lists/*
 
 # Create and activate virtual environment
 RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Copy package files first for better caching
-COPY package*.json ./
-
-# Install npm dependencies
-RUN npm ci --no-audit --prefer-offline --legacy-peer-deps
-
-# Copy the rest of the application (excluding node_modules)
-COPY . .
-
-# Install Python dependencies if needed
+# Install Python dependencies first (better layer caching)
 COPY requirements.txt .
 RUN if [ -f "requirements.txt" ]; then \
+    pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt; \
     fi
 
-# Make Python bridge executable if it exists
-RUN if [ -f "python_bridge.py" ]; then chmod +x python_bridge.py; fi
+# Install Node.js dependencies
+COPY package*.json ./
+RUN npm ci --production --no-audit
 
-# Production stage
-FROM node:18-slim
-
-WORKDIR /app
-
-# Install Python runtime
-RUN apt-get update && apt-get install -y python3 \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy virtual environment from builder
-COPY --from=builder /opt/venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
-
-# Copy built node_modules and application
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app .
+# Copy the rest of the application
+COPY . .
 
 # Set environment variables
 ENV NODE_ENV=production
 ENV PORT=9593
 ENV ENDPOINT=/rest
+ENV PYTHONUNBUFFERED=1
 
 # Expose the port for REST transport
 EXPOSE 9593
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:9593/health || exit 1
 
 # Start the application
 CMD ["node", "server.js"]

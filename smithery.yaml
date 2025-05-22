@@ -14,11 +14,6 @@ startCommand:
         title: "Robinhood Private Key"
         description: "Your base64-encoded private key for authentication"
         format: "password"
-      mode:
-        type: string
-        enum: ["http", "stdio"]
-        default: "stdio"
-        description: "Server mode (http or stdio)"
   commandFunction: |
     (config) => ({
       command: "node",
@@ -26,17 +21,89 @@ startCommand:
       env: {
         ROBINHOOD_API_KEY: config.robinhood_api_key,
         ROBINHOOD_PRIVATE_KEY: config.robinhood_private_key,
-        MODE: config.mode || "stdio",
-        NODE_ENV: "production",
-        PYTHONUNBUFFERED: "1",
-        PYTHONPATH: "/app"
+        NODE_ENV: "production"
       }
     })
+
+# Define the tools that will be available in Smithery
+tools:
+  - name: "getAccount"
+    description: "Retrieves the user's Robinhood crypto trading account details"
+    parameters:
+      type: "object"
+      properties: {}
+    returns:
+      type: "object"
+      description: "Account information including status, balances, and account ID"
+
+  - name: "getHoldings"
+    description: "Retrieves the user's cryptocurrency holdings"
+    parameters:
+      type: "object"
+      properties:
+        asset_codes:
+          type: "array"
+          description: "List of specific cryptocurrencies to filter by (e.g., ['BTC', 'ETH'])"
+          items:
+            type: "string"
+      required: []
+
+  - name: "getCryptoQuote"
+    description: "Gets the current quote for a cryptocurrency"
+    parameters:
+      type: "object"
+      properties:
+        symbol:
+          type: "string"
+          description: "Cryptocurrency symbol (e.g., 'BTC' or 'ETH')"
+      required: ["symbol"]
+    returns:
+      type: "object"
+      description: "Current quote information for the specified cryptocurrency"
+
+  - name: "placeOrder"
+    description: "Places a new order for a cryptocurrency"
+    parameters:
+      type: "object"
+      properties:
+        symbol:
+          type: "string"
+          description: "Cryptocurrency symbol (e.g., 'BTC' or 'ETH')"
+        side:
+          type: "string"
+          enum: ["buy", "sell"]
+          description: "Order side (buy or sell)"
+        type:
+          type: "string"
+          enum: ["market", "limit"]
+          description: "Order type (market or limit)"
+        amount:
+          type: "number"
+          description: "Amount to buy/sell in the cryptocurrency"
+        price:
+          type: "number"
+          description: "Limit price (required for limit orders)"
+      required: ["symbol", "side", "type", "amount"]
+    returns:
+      type: "object"
+      description: "Order details and status"
+
+  - name: "cancelOrder"
+    description: "Cancels an open order"
+    parameters:
+      type: "object"
+      properties:
+        order_id:
+          type: "string"
+          description: "ID of the order to cancel"
+      required: ["order_id"]
+    returns:
+      type: "object"
+      description: "Cancellation status"
 
 build:
   dockerfile: Dockerfile
   dockerBuildPath: .
-  # Increase memory limit for Python builds if needed
   resources:
     memory: 2048
 

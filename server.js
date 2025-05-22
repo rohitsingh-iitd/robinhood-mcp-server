@@ -1,5 +1,6 @@
 // server.js - Main entry point for the Robinhood MCP Server
 import { RestServerTransport } from '@chatmcp/sdk/server/rest.js';
+import express from 'express';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -108,9 +109,26 @@ async function handleInitialize(message) {
     jsonrpc: '2.0',
     id: message.id,
     result: {
+      serverInfo: {
+        name: "Robinhood MCP Server",
+        version: "1.0.0"
+      },
       capabilities: {
         tools: {
-          list: {},
+          list: {
+            dynamicRegistration: false,
+            dynamicRegistrationProperties: {
+              schema: {
+                type: "object",
+                properties: {
+                  name: { type: "string" },
+                  description: { type: "string" },
+                  parameters: { type: "object" }
+                },
+                required: ["name", "description"]
+              }
+            }
+          },
           execute: {}
         }
       }
@@ -124,7 +142,11 @@ async function handleListTools(message) {
     jsonrpc: '2.0',
     id: message.id,
     result: {
-      tools: serverState.tools
+      tools: serverState.tools.map(tool => ({
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.parameters || { type: "object", properties: {} }
+      }))
     }
   };
 }
@@ -444,37 +466,56 @@ server.setRequestHandler(async (request) => {
   }
 });
 
+// Create Express app
+const app = express();
+app.use(express.json());
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok' });
+});
+
 // Start the server
 async function startServer() {
   try {
     console.log('Starting server...');
     
-    // Create a new transport instance
+    // Create a new transport instance with Express app
     const transport = new RestServerTransport({
       port,
-      endpoint
+      endpoint,
+      server: app
     });
     
     console.log('Connecting server to transport...');
     await server.connect(transport);
     
-    console.log('Starting transport server...');
-    await transport.startServer();
-    
-    console.log(`Server running on http://localhost:${port}${endpoint}`);
+    // Start the HTTP server
+    const httpServer = app.listen(port, () => {
+      console.log(`Server running on http://localhost:${port}${endpoint}`);
+      console.log(`Health check available at http://localhost:${port}/health`);
+    });
     
     // Handle process termination
-    process.on('SIGINT', async () => {
+    const shutdown = async () => {
       console.log('Shutting down server...');
       try {
-        await transport.stopServer();
+        await new Promise((resolve) => httpServer.close(resolve));
+        if (transport.stopServer) {
+          await transport.stopServer();
+        }
         console.log('Server stopped');
         process.exit(0);
       } catch (error) {
         console.error('Error shutting down server:', error);
         process.exit(1);
       }
-    });
+    };
+    
+    process.on('SIGTERM', shutdown);
+    process.on('SIGINT', shutdown);
+    
+    return httpServer;
     
   } catch (error) {
     console.error('Failed to start server:', error);

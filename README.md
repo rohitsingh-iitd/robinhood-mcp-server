@@ -249,4 +249,6 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 The author is not responsible for any loss or damage that may occur as a result of using this project.
 
+[![smithery badge](https://smithery.ai/badge/@rohitsingh-iitd/robinhood-mcp-server)](https://smithery.ai/server/@rohitsingh-iitd/robinhood-mcp-server)
+
 
