@@ -35,46 +35,77 @@ const accountClient = new AccountClient(authClient);
 const marketDataClient = new MarketDataClient(authClient);
 const tradingClient = new TradingClient(authClient);
 
-// Create MCP server
+// Simple MCP server implementation
 const server = {
   connect: async (transport) => {
-    // Store the transport for later use
+    console.log('Server connecting to transport...');
     serverState.transport = transport;
     
-    // Set up message handler
+    // Simple message handler that responds immediately
     transport.onmessage = async (message) => {
+      const startTime = Date.now();
+      console.log(`[${new Date().toISOString()}] Received message:`, message.method || 'unknown');
+      
       try {
-        console.log('Received message:', JSON.stringify(message, null, 2));
-        
-        // Handle the message based on its method
         let result;
+        
+        // Handle different message types
         switch (message.method) {
           case 'initialize':
             result = await handleInitialize(message);
             break;
+            
           case 'tools/list':
-            result = await handleListTools(message);
+            // Return tools immediately without async/await
+            const toolsList = serverState.tools.map(tool => ({
+              name: tool.name,
+              description: tool.description,
+              parameters: tool.parameters || { type: "object", properties: {} }
+            }));
+            
+            result = {
+              jsonrpc: '2.0',
+              id: message.id,
+              result: { tools: toolsList }
+            };
             break;
+            
           case 'tools/execute':
-            result = await handleExecuteTool(message);
+            if (serverState.requestHandler) {
+              const { name, parameters } = message.params;
+              result = {
+                jsonrpc: '2.0',
+                id: message.id,
+                result: await serverState.requestHandler({
+                  method: name,
+                  params: parameters
+                })
+              };
+            } else {
+              result = {
+                jsonrpc: '2.0',
+                id: message.id,
+                error: { code: -32601, message: 'No request handler registered' }
+              };
+            }
             break;
+            
           default:
             result = {
               jsonrpc: '2.0',
               id: message.id,
-              error: {
-                code: -32601,
-                message: 'Method not found'
-              }
+              error: { code: -32601, message: 'Method not found' }
             };
         }
         
-        // Send the response if we have a result
+        // Send response
         if (result) {
           await transport.send(result);
+          console.log(`[${new Date().toISOString()}] Sent response for ${message.method} in ${Date.now() - startTime}ms`);
         }
+        
       } catch (error) {
-        console.error('Error handling message:', error);
+        console.error(`Error handling ${message.method}:`, error);
         if (message && message.id) {
           await transport.send({
             jsonrpc: '2.0',
@@ -90,25 +121,28 @@ const server = {
     };
     
     console.log('Server connected to transport');
+    return Promise.resolve();
   },
   
   defineTools: (tools) => {
-    serverState.tools = tools;
-    console.log(`Registered ${tools.length} tools`);
+    serverState.tools = tools || [];
+    console.log(`Registered ${serverState.tools.length} tools`);
+    return Promise.resolve();
   },
   
   setRequestHandler: (handler) => {
     serverState.requestHandler = handler;
     console.log('Request handler set');
+    return Promise.resolve();
   }
 };
 
-// Handle initialize message - respond immediately with basic capabilities
+// Handle initialize message - respond immediately with minimal capabilities
 async function handleInitialize(message) {
   console.log('Handling initialize request');
   
-  // Respond immediately with basic capabilities
-  const response = {
+  // Respond immediately with minimal capabilities
+  return {
     jsonrpc: '2.0',
     id: message.id,
     result: {
@@ -118,17 +152,12 @@ async function handleInitialize(message) {
       },
       capabilities: {
         tools: {
-          list: {
-            dynamicRegistration: false
-          },
+          list: {},
           execute: {}
         }
       }
     }
   };
-  
-  console.log('Sending initialize response:', JSON.stringify(response, null, 2));
-  return response;
 }
 
 // Handle list tools message
@@ -215,8 +244,8 @@ async function handleExecuteTool(message) {
   }
 }
 
-// Define MCP tools
-server.defineTools([
+// Define MCP tools (must be defined before server starts)
+const MCP_TOOLS = [
   {
     name: "getAccount",
     description: "Retrieves the user's Robinhood crypto trading account details",
@@ -224,6 +253,97 @@ server.defineTools([
     returns: {
       type: "object",
       description: "Account information including status, balances, and account ID"
+    }
+  },
+  {
+    name: "getHoldings",
+    description: "Retrieves the user's cryptocurrency holdings",
+    parameters: {
+      type: "object",
+      properties: {
+        asset_codes: {
+          type: "array",
+          description: "List of specific cryptocurrencies to filter by (e.g., ['BTC', 'ETH'])",
+          items: { type: "string" }
+        }
+      },
+      required: []
+    },
+    returns: {
+      type: "object",
+      description: "List of cryptocurrency holdings with details"
+    }
+  },
+  {
+    name: "getCryptoQuote",
+    description: "Gets the current quote for a cryptocurrency",
+    parameters: {
+      type: "object",
+      properties: {
+        symbol: {
+          type: "string",
+          description: "Cryptocurrency symbol (e.g., 'BTC' or 'ETH')"
+        }
+      },
+      required: ["symbol"]
+    },
+    returns: {
+      type: "object",
+      description: "Current quote information for the specified cryptocurrency"
+    }
+  },
+  {
+    name: "placeOrder",
+    description: "Places a new order for a cryptocurrency",
+    parameters: {
+      type: "object",
+      properties: {
+        symbol: {
+          type: "string",
+          description: "Cryptocurrency symbol (e.g., 'BTC' or 'ETH')"
+        },
+        side: {
+          type: "string",
+          enum: ["buy", "sell"],
+          description: "Order side (buy or sell)"
+        },
+        type: {
+          type: "string",
+          enum: ["market", "limit"],
+          description: "Order type (market or limit)"
+        },
+        amount: {
+          type: "number",
+          description: "Amount to buy/sell in the cryptocurrency"
+        },
+        price: {
+          type: "number",
+          description: "Limit price (required for limit orders)"
+        }
+      },
+      required: ["symbol", "side", "type", "amount"]
+    },
+    returns: {
+      type: "object",
+      description: "Order details and status"
+    }
+  },
+  {
+    name: "cancelOrder",
+    description: "Cancels an open order",
+    parameters: {
+      type: "object",
+      properties: {
+        order_id: {
+          type: "string",
+          description: "ID of the order to cancel"
+        }
+      },
+      required: ["order_id"]
+    },
+    returns: {
+      type: "object",
+      description: "Cancellation status"
     }
   },
   {
@@ -419,7 +539,10 @@ server.defineTools([
       description: "Cancellation confirmation"
     }
   }
-]);
+];
+
+// Initialize server with tools
+server.defineTools(MCP_TOOLS);
 
 // Set up request handler
 server.setRequestHandler(async (request) => {
@@ -508,68 +631,173 @@ app.get('/health', (req, res) => {
 
 // Start the server
 async function startServer() {
-  try {
-    console.log('Starting server...');
+  console.log('Starting server...');
+  
+  // Create Express app with JSON parsing
+  const app = express();
+  app.use(express.json());
+  
+  // Add request logging middleware
+  app.use((req, res, next) => {
+    const startTime = Date.now();
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
     
-    // Create a new transport instance with Express app
-    const transport = new RestServerTransport({
-      port,
-      endpoint,
-      server: app
+    res.on('finish', () => {
+      console.log(`[${new Date().toISOString()}] ${req.method} ${req.url} ${res.statusCode} - ${Date.now() - startTime}ms`);
     });
     
-    // Set a 30-second timeout for requests
-    app.use((req, res, next) => {
-      req.setTimeout(30000, () => {
-        console.error('Request timed out:', req.method, req.url);
-        if (!res.headersSent) {
-          res.status(504).json({ error: 'Request timeout' });
+    next();
+  });
+  
+  // Health check endpoint (must respond quickly)
+  app.get('/health', (req, res) => {
+    res.status(200).json({
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime()
+    });
+  });
+  
+  // Create transport with Express app
+  const transport = new RestServerTransport({
+    port,
+    endpoint,
+    server: app
+  });
+  
+  // Set timeouts
+  const REQUEST_TIMEOUT_MS = 10000; // 10 seconds
+  const SERVER_TIMEOUT_MS = 15000;  // 15 seconds
+  
+  // Request timeout middleware
+  app.use((req, res, next) => {
+    req.setTimeout(REQUEST_TIMEOUT_MS, () => {
+      console.error(`Request timed out: ${req.method} ${req.url}`);
+      if (!res.headersSent) {
+        res.status(504).json({ 
+          error: 'Request timeout',
+          message: 'The server did not receive a timely response'
+        });
+      }
+    });
+    next();
+  });
+  
+  // Connect to transport
+  console.log('Connecting to transport...');
+  try {
+    await server.connect(transport);
+    console.log('Successfully connected to transport');
+  } catch (error) {
+    console.error('Failed to connect to transport:', error);
+    process.exit(1);
+  }
+  
+  // Start HTTP server
+  return new Promise((resolve, reject) => {
+    const httpServer = app.listen(port, '0.0.0.0', () => {
+      const address = httpServer.address();
+      console.log(`Server running on http://0.0.0.0:${address.port}${endpoint}`);
+      console.log(`Health check: http://0.0.0.0:${address.port}/health`);
+      
+      // Set server timeout
+      httpServer.setTimeout(SERVER_TIMEOUT_MS);
+      
+      // Handle server errors
+      httpServer.on('error', (error) => {
+        console.error('Server error:', error);
+        if (!httpServer.listening) {
+          reject(error);
         }
       });
-      next();
-    });
-    
-    console.log('Connecting server to transport...');
-    await server.connect(transport);
-    
-    // Start the HTTP server
-    const httpServer = app.listen(port, '0.0.0.0', () => {
-      console.log(`Server running on http://0.0.0.0:${port}${endpoint}`);
-      console.log(`Health check available at http://0.0.0.0:${port}/health`);
-    });
-    
-    // Set server timeout to 25 seconds (less than the 30s request timeout)
-    httpServer.setTimeout(25000);
-    
-    // Handle process termination
-    const shutdown = async () => {
-      console.log('Shutting down server...');
-      try {
-        await new Promise((resolve) => httpServer.close(resolve));
-        if (transport.stopServer) {
-          await transport.stopServer();
+      
+      // Handle process termination
+      const shutdown = async (signal) => {
+        console.log(`Received ${signal}, shutting down gracefully...`);
+        
+        try {
+          // Close HTTP server
+          await new Promise((resolveClose) => {
+            httpServer.close((err) => {
+              if (err) console.error('Error closing HTTP server:', err);
+              resolveClose();
+            });
+          });
+          
+          // Close transport if available
+          if (transport && typeof transport.stopServer === 'function') {
+            await transport.stopServer().catch(err => {
+              console.error('Error stopping transport:', err);
+            });
+          }
+          
+          console.log('Server stopped');
+          process.exit(0);
+          
+        } catch (error) {
+          console.error('Error during shutdown:', error);
+          process.exit(1);
         }
-        console.log('Server stopped');
-        process.exit(0);
-      } catch (error) {
-        console.error('Error shutting down server:', error);
-        process.exit(1);
+      };
+      
+      // Handle signals
+      process.on('SIGTERM', () => shutdown('SIGTERM'));
+      process.on('SIGINT', () => shutdown('SIGINT'));
+      
+      // Resolve with the server instance
+      resolve(httpServer);
+    });
+    
+    // Handle any errors during server startup
+    httpServer.on('error', (error) => {
+      console.error('Failed to start server:', error);
+      reject(error);
+    });
+    
+    // Set a startup timeout
+    setTimeout(() => {
+      if (!httpServer.listening) {
+        const error = new Error('Server startup timed out');
+        console.error(error.message);
+        httpServer.close();
+        reject(error);
       }
-    };
+    }, 10000); // 10 second startup timeout
+  });
+}
+
+// Start the server with error handling
+async function main() {
+  try {
+    // Register tools before starting the server
+    console.log('Registering tools...');
+    await server.defineTools(MCP_TOOLS);
     
-    process.on('SIGTERM', shutdown);
-    process.on('SIGINT', shutdown);
+    // Start the server
+    console.log('Starting server...');
+    await startServer();
     
-    return httpServer;
-    
+    console.log('Server started successfully');
   } catch (error) {
     console.error('Failed to start server:', error);
     process.exit(1);
   }
 }
 
-// Start the server
-startServer().catch(error => {
-  console.error('Unhandled error in server startup:', error);
+// Handle uncaught exceptions
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught exception:', error);
+  process.exit(1);
+});
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled rejection at:', promise, 'reason:', reason);
+  process.exit(1);
+});
+
+// Start the application
+main().catch(error => {
+  console.error('Fatal error:', error);
   process.exit(1);
 });
