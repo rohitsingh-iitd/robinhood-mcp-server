@@ -1,0 +1,28 @@
+{
+  "mcpServers": {
+    "robinhood": {
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "-p", "8000:8000",
+        "-p", "8001:8001",
+        "-e", "ROBINHOOD_API_KEY",
+        "-e", "ROBINHOOD_PRIVATE_KEY",
+        "-e", "HOST=0.0.0.0",
+        "-e", "PORT=8000",
+        "-e", "DEBUG=False",
+        "-e", "LOG_LEVEL=INFO",
+        "-e", "RATE_LIMIT_ENABLED=True",
+        "-e", "RATE_LIMIT_REQUESTS=100",
+        "-e", "RATE_LIMIT_PERIOD=60",
+        "robinhood-mcp-server"
+      ],
+      "env": {
+        "ROBINHOOD_API_KEY": "<YOUR_API_KEY>",
+        "ROBINHOOD_PRIVATE_KEY": "<YOUR_BASE64_ENCODED_PRIVATE_KEY>"
+      }
+    }
+  }
+}
