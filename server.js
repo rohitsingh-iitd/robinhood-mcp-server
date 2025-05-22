@@ -547,58 +547,93 @@ server.defineTools(MCP_TOOLS);
 // Set up request handler
 server.setRequestHandler(async (request) => {
   try {
-    // Get auth params from request if global params not set
+    // Handle listTools request - no authentication required
+    if (request.method === 'listTools') {
+      // Return tool metadata without requiring authentication
+      const tools = MCP_TOOLS.map(tool => ({
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.parameters || { type: 'object', properties: {} }
+      }));
+      
+      return {
+        jsonrpc: '2.0',
+        id: request.id,
+        result: tools
+      };
+    }
+    
+    // For all other requests, require authentication
     const apiKey = robinhoodApiKey || getAuthValue(request, "ROBINHOOD_API_KEY");
     if (!apiKey) {
-      throw new Error("ROBINHOOD_API_KEY not set");
+      throw new Error("ROBINHOOD_API_KEY not set. Please provide your Robinhood API key to execute this tool.");
     }
     
-    const { name, arguments: args = {} } = request.params;
-    
-    // Handle different function calls
-    switch (name) {
-      case "getAccount":
-        return await accountClient.getAccount();
-        
-      case "getHoldings":
-        return await accountClient.getHoldings(args.asset_codes);
-        
-      case "getBestPrice":
-        return await marketDataClient.getBestBidAsk(args.symbol);
-        
-      case "getEstimatedPrice":
-        return await marketDataClient.getEstimatedPrice(
-          args.symbol,
-          args.side,
-          args.quantity
-        );
-        
-      case "getTradingPairs":
-        return await tradingClient.getTradingPairs(args.symbols);
-        
-      case "placeOrder":
-        return await tradingClient.placeOrder(
-          args.symbol,
-          args.side,
-          args.quantity,
-          args.type,
-          args.price,
-          args.time_in_force,
-          args.stop_price
-        );
-        
-      case "getOrders":
-        return await tradingClient.getOrders(args.status);
-        
-      case "getOrder":
-        return await tradingClient.getOrder(args.order_id);
-        
-      case "cancelOrder":
-        return await tradingClient.cancelOrder(args.order_id);
-        
-      default:
-        throw new Error(`Unknown function: ${name}`);
+    // Handle executeTool request
+    if (request.method === 'executeTool') {
+      const { tool, params } = request.params;
+      
+      // Find the tool implementation
+      const toolImpl = MCP_TOOLS.find(t => t.name === tool);
+      if (!toolImpl) {
+        throw new Error(`Tool '${tool}' not found`);
+      }
+      
+      // Initialize clients with the API key
+      const clients = {
+        account: new AccountClient(apiKey),
+        marketData: new MarketDataClient(apiKey),
+        trading: new TradingClient(apiKey)
+      };
+      
+      // Execute the tool with the provided parameters
+      switch (tool) {
+        case 'getAccount':
+          return await clients.account.getAccount();
+          
+        case 'getHoldings':
+          return await clients.account.getHoldings(params.asset_codes);
+          
+        case 'getBestPrice':
+          return await clients.marketData.getBestBidAsk(params.symbol);
+          
+        case 'getEstimatedPrice':
+          return await clients.marketData.getEstimatedPrice(
+            params.symbol,
+            params.side,
+            params.quantity
+          );
+          
+        case 'getTradingPairs':
+          return await clients.trading.getTradingPairs(params.symbols);
+          
+        case 'placeOrder':
+          return await clients.trading.placeOrder(
+            params.symbol,
+            params.side,
+            params.quantity,
+            params.type,
+            params.price,
+            params.time_in_force,
+            params.stop_price
+          );
+          
+        case 'getOrders':
+          return await clients.trading.getOrders(params.status);
+          
+        case 'getOrder':
+          return await clients.trading.getOrder(params.order_id);
+          
+        case 'cancelOrder':
+          return await clients.trading.cancelOrder(params.order_id);
+          
+        default:
+          throw new Error(`Unsupported tool: ${tool}`);
+      }
     }
+    
+    // If we get here, the request method is not supported
+    throw new Error(`Unsupported request method: ${request.method}`);
   } catch (error) {
     console.error(`Error handling request: ${error.message}`);
     throw error;
