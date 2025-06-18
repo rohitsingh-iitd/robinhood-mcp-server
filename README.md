@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/rohitsingh-iitd-robinhood-mcp-server-badge.png)](https://mseep.ai/app/rohitsingh-iitd-robinhood-mcp-server)
+
 # Robinhood MCP Server - User Guide
 
 ## Overview
